@@ -1,0 +1,54 @@
+name: Add approved bot channel
+# Flow: a user clicks "Suggest for everyone" in the app -> prefilled issue
+# "Add bot channel: <name>". Repo owner adds the "approved" label -> this
+# workflow appends the channel to channels.json, pushes (Pages redeploys),
+# comments, and closes the issue.
+on:
+  issues:
+    types: [labeled]
+permissions:
+  contents: write
+  issues: write
+jobs:
+  add:
+    if: github.event.label.name == 'approved'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update channels.json from issue title
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = context.payload.issue.title || '';
+            const m = title.match(/add bot channel:\s*@?([a-z0-9_]{3,25})/i);
+            if (!m) {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.payload.issue.number,
+                body: 'Could not parse a channel name — expected a title like `Add bot channel: somechannel`.' });
+              core.setFailed('unparseable title');
+              return;
+            }
+            const ch = m[1].toLowerCase();
+            const fs = require('fs');
+            const j = JSON.parse(fs.readFileSync('channels.json', 'utf8'));
+            if (!j.channels.includes(ch)) {
+              j.channels.push(ch);
+              fs.writeFileSync('channels.json', JSON.stringify(j, null, 2) + '\n');
+            }
+            core.exportVariable('CH', ch);
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet; then
+            git add channels.json
+            git commit -m "Add bot channel: $CH (from #${{ github.event.issue.number }})"
+            git push
+          fi
+      - name: Comment and close
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({ ...context.repo, issue_number: context.payload.issue.number,
+              body: `✅ \`${process.env.CH}\` is in the shared bot list — live for everyone within a few minutes.` });
+            await github.rest.issues.update({ ...context.repo, issue_number: context.payload.issue.number, state: 'closed' });

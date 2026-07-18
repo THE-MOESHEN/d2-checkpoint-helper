@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Checkpoint Queue Helper</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22g%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%220%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%231b212b%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%230b0e13%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2212%22%20fill%3D%22url(%23g)%22%2F%3E%3Cpath%20fill%3D%22%23ffb833%22%20fill-rule%3D%22evenodd%22%20d%3D%22M32%206%2057%2032%2032%2058%207%2032Z%20M32%2016%2047%2032%2032%2048%2017%2032Z%22%2F%3E%3Cpath%20fill%3D%22none%22%20stroke%3D%22%23ffb833%22%20stroke-width%3D%224.4%22%20stroke-linejoin%3D%22round%22%20stroke-linecap%3D%22round%22%20d%3D%22M22%2037%2032%2027%2042%2037%22%2F%3E%3C%2Fsvg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0d0f13; --bg2:#11141a; --panel:#14171e; --panel2:#181c24;
+    --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.12);
+    --text:#eef1f6; --muted:#98a2b3; --faint:#606a7a;
+    --gold:#ffb833; --gold-soft:rgba(255,184,51,.14); --gold-line:rgba(255,184,51,.4);
+    --green:#8bef74; --red:#ff6a57; --purple:#b69bff;
+    --font:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    --cut:polygon(0 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%);
+  }
+  *{box-sizing:border-box;} html,body{margin:0;}
+  body{font-family:var(--font);color:var(--text);min-height:100vh;line-height:1.55;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(900px 500px at 50% -200px,rgba(54,74,120,.25),transparent 70%),linear-gradient(180deg,#0d1016,#0a0c10);
+    background-attachment:fixed;}
+  .wrap{max-width:780px;margin:0 auto;padding:24px 20px 120px;}
+  ::selection{background:var(--gold-soft);}
+
+  .chip{position:fixed;top:16px;right:16px;z-index:60;display:flex;align-items:center;gap:10px;
+    background:rgba(20,23,30,.92);border:1px solid var(--line2);border-radius:3px;padding:8px 13px;
+    font-size:12.5px;color:var(--muted);backdrop-filter:blur(8px);box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:min(92vw,330px);}
+  .chip .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:0 0 auto;transition:.2s;}
+  .chip.on .dot{background:var(--green);box-shadow:0 0 10px var(--green);}
+  .chip.err .dot{background:var(--red);} .chip.connecting .dot{background:var(--gold);}
+  .chip b{color:var(--text);font-weight:600;letter-spacing:.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .chip .state{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.12em;white-space:nowrap;}
+  .chip button{background:none;border:none;color:var(--faint);cursor:pointer;font-size:11px;text-transform:uppercase;letter-spacing:.1em;padding:0;}
+  .chip button:hover{color:var(--gold);}
+
+  header{margin:14px 0 26px;}
+  .kicker{font-size:11px;font-weight:600;letter-spacing:.42em;text-transform:uppercase;color:var(--gold);display:flex;align-items:center;gap:10px;}
+  .kicker::before{content:'';width:22px;height:1px;background:var(--gold-line);}
+  h1{font-weight:700;font-size:clamp(30px,6vw,46px);letter-spacing:-.02em;margin:8px 0 8px;line-height:1.02;}
+  .sub{color:var(--muted);font-size:14px;max-width:560px;}
+  .sub a,.note a,footer a{color:var(--gold);text-decoration:none;border-bottom:1px solid var(--gold-line);}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:20px 22px;margin-bottom:16px;}
+  .step{font-size:11px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);
+    display:flex;align-items:center;gap:11px;margin-bottom:16px;padding-bottom:13px;border-bottom:1px solid var(--line);}
+  .step .n{display:inline-grid;place-items:center;width:20px;height:20px;background:var(--gold-soft);color:var(--gold);font-size:11px;font-weight:700;border-radius:2px;}
+  .step .r{margin-left:auto;color:var(--muted);text-transform:none;letter-spacing:0;font-size:13px;font-weight:400;}
+
+  input[type=text],input[type=password],select{width:100%;padding:12px 14px;background:var(--bg);border:1px solid var(--line2);
+    border-radius:3px;color:var(--text);font-size:15px;font-family:var(--font);outline:none;transition:.15s;}
+  select{cursor:pointer;font-size:13px;padding:10px 12px;}
+  input:focus,select:focus{border-color:var(--gold-line);box-shadow:0 0 0 3px var(--gold-soft);}
+  input.bad{border-color:rgba(255,106,87,.6);box-shadow:0 0 0 3px rgba(255,106,87,.12);}
+  input::placeholder{color:var(--faint);}
+  .hint{font-size:12px;color:var(--faint);margin-top:8px;letter-spacing:.01em;} .hint.err{color:var(--red);} .hint.ok{color:var(--green);}
+
+  .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:4px;flex-wrap:wrap;}
+  .tab{flex:1;min-width:84px;padding:11px 8px;border:none;background:none;cursor:pointer;color:var(--muted);
+    font-family:var(--font);font-weight:600;text-transform:uppercase;letter-spacing:.14em;font-size:12px;
+    border-bottom:2px solid transparent;margin-bottom:-1px;transition:.15s;}
+  .tab:hover{color:var(--text);} .tab.active{color:var(--gold);border-bottom-color:var(--gold);}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:9px;margin-top:18px;}
+  .chip-a{text-align:left;padding:13px 15px;cursor:pointer;background:var(--panel2);border:1px solid var(--line);
+    border-radius:3px;color:var(--text);font-size:14px;font-weight:500;transition:.14s;line-height:1.3;
+    min-height:72px;display:flex;flex-direction:column;justify-content:flex-end;gap:1px;
+    background-size:cover;background-position:center;text-shadow:0 1px 3px rgba(0,0,0,.85);}
+  .chip-a:hover{border-color:var(--line2);filter:brightness(1.18);}
+  .chip-a .code{display:block;font-size:10px;color:var(--muted);letter-spacing:.16em;text-transform:uppercase;margin-top:2px;font-weight:600;}
+  .chip-a.active{border-color:var(--gold-line);box-shadow:inset 0 0 0 1.5px var(--gold-line),0 0 14px rgba(255,184,51,.18);}
+  .chip-a.active .code{color:var(--gold);}
+
+  .diffrow{display:flex;align-items:center;gap:14px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line);flex-wrap:wrap;}
+  .diffrow .lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.2em;color:var(--faint);}
+  .seg{display:inline-flex;background:var(--bg);border:1px solid var(--line2);border-radius:3px;padding:3px;gap:3px;}
+  .seg button{padding:8px 22px;border:none;background:none;cursor:pointer;color:var(--muted);font-family:var(--font);
+    font-weight:600;letter-spacing:.12em;text-transform:uppercase;font-size:12px;border-radius:2px;transition:.15s;}
+  .seg button.on{color:#1a1206;background:var(--gold);} .seg button.on.master{background:#ff8a5c;color:#2a0f06;}
+
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .pill{padding:8px 9px 8px 13px;font-size:13px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);
+    color:var(--muted);font-weight:500;display:inline-flex;gap:9px;align-items:center;cursor:pointer;transition:.14s;}
+  .pill:hover{border-color:var(--line2);color:var(--text);}
+  .pill.active{background:var(--gold-soft);border-color:var(--gold-line);color:var(--gold);}
+  .pill .d{width:7px;height:7px;border-radius:50%;background:var(--faint);} .pill.live .d{background:var(--green);box-shadow:0 0 6px var(--green);}
+  .pill .x{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;background:none;color:var(--faint);font-size:13px;border:none;cursor:pointer;}
+  .pill .x:hover{background:rgba(255,106,87,.18);color:var(--red);}
+  .pill .x.t:hover{background:var(--gold-soft);color:var(--gold);}
+  .pill.off{opacity:.55;border-style:dashed;color:var(--faint);}
+  .pill.off .d{background:transparent;border:1px solid var(--faint);}
+  .enc-pill{padding:8px 14px;border-radius:3px;text-transform:capitalize;cursor:pointer;}
+  .enc-pill.active{background:var(--gold-soft);border-color:var(--gold-line);color:var(--gold);}
+  .enc-pill.chest{border-style:dashed;}
+  .enc-pill .cb{display:inline-flex;align-items:center;margin-right:1px;}
+
+  .posdock{position:fixed;top:70px;right:16px;z-index:55;width:238px;
+    background:linear-gradient(180deg,#171c26,#11141b);border:1px solid var(--line2);border-left:3px solid var(--gold);
+    clip-path:var(--cut);padding:15px 16px 17px;box-shadow:0 18px 50px rgba(0,0,0,.5);}
+  .pd-head{font-size:11px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);margin-bottom:11px;}
+  .pd-rows{display:flex;flex-direction:column;gap:8px;}
+  .pd-row{display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--line);border-radius:3px;padding:8px 10px;
+    cursor:pointer;transition:border-color .15s,box-shadow .15s;}
+  .pd-row:hover{border-color:rgba(255,106,87,.55);box-shadow:0 0 12px rgba(255,106,87,.2),inset 0 0 0 1px rgba(255,106,87,.25);}
+  .pd-row.leaving{opacity:.55;pointer-events:none;}
+  .pd-pos{font-weight:700;font-size:21px;line-height:1;color:var(--green);min-width:38px;text-align:center;letter-spacing:-.02em;font-variant-numeric:tabular-nums;transition:color .15s;}
+  .pd-row:hover .pd-pos{color:var(--red);}
+  .pd-ch{flex:1;min-width:0;}
+  .pd-ch b{display:block;font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .pd-ch span{display:block;font-size:10.5px;color:var(--faint);}
+  .pd-leave{display:none;color:var(--red);font-weight:700;letter-spacing:.14em;text-transform:uppercase;}
+  .pd-row:hover .pd-sub{display:none;}
+  .pd-row:hover .pd-leave{display:block;}
+  .pd-x{flex:0 0 auto;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:none;border:none;color:var(--faint);font-size:13px;cursor:pointer;
+    transition:transform .2s cubic-bezier(.4,0,.2,1),color .15s,background .15s;}
+  .pd-row:hover .pd-x{background:rgba(255,106,87,.2);color:var(--red);transform:rotate(90deg) scale(1.2);}
+  @media (prefers-reduced-motion:reduce){.pd-x{transition:none;}}
+  .pd-empty{font-size:12px;color:var(--faint);line-height:1.5;}
+  @media (max-width:1299px){.posdock{position:static;width:auto;margin-bottom:18px;box-shadow:none;}}
+
+  .feedtabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px;}
+  .ftab{padding:5px 11px;border:1px solid var(--line);background:var(--panel2);border-radius:3px;color:var(--muted);
+    font-family:var(--font);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:.14s;}
+  .ftab:hover{color:var(--text);border-color:var(--line2);}
+  .ftab.on{color:var(--gold);border-color:var(--gold-line);background:var(--gold-soft);}
+  .maxbtn{margin-left:8px;flex:0 0 auto;background:none;border:1px solid var(--line);border-radius:3px;color:var(--faint);
+    width:26px;height:26px;display:grid;place-items:center;cursor:pointer;transition:.15s;}
+  .maxbtn:hover{color:var(--gold);border-color:var(--gold-line);}
+  .autobtn{margin-left:auto;width:auto;padding:0 11px;font-family:var(--font);font-size:10px;font-weight:700;
+    letter-spacing:.14em;text-transform:uppercase;}
+  .autobtn.on{color:var(--gold);border-color:var(--gold-line);background:var(--gold-soft);animation:autoPulse 2.2s ease-in-out infinite;}
+  @keyframes autoPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,184,51,.3);}50%{box-shadow:0 0 10px 2px rgba(255,184,51,.28);}}
+  @media (prefers-reduced-motion:reduce){.autobtn.on{animation:none;}}
+  button.act.idle{opacity:.4;}
+  .addbtn{margin-left:8px;}
+  .addbtn svg{transition:transform .25s cubic-bezier(.4,0,.2,1);}
+  .addbtn.open{color:var(--gold);border-color:var(--gold-line);}
+  .addbtn.open svg{transform:rotate(45deg);}
+  /* add-channel row: collapses to nothing, expands full-width with a smooth fit */
+  .addrow{display:grid;grid-template-rows:0fr;opacity:0;margin:0;
+    transition:grid-template-rows .28s cubic-bezier(.4,0,.2,1),opacity .22s ease,margin .28s ease;}
+  .addrow.open{grid-template-rows:1fr;opacity:1;margin-bottom:10px;}
+  .addrow>div{overflow:hidden;display:flex;gap:9px;min-height:0;}
+  .addrow input{flex:1;min-width:0;}
+  @media (prefers-reduced-motion:reduce){.addrow,.addbtn svg{transition:none;}}
+  #liveCard.max{position:fixed;inset:12px;z-index:95;margin:0;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.7);}
+  #liveCard.max .log{flex:1;height:auto;min-height:0;}
+  .log{background:var(--bg);border:1px solid var(--line);border-radius:3px;padding:11px 13px;height:150px;overflow-y:auto;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.6;}
+  .log .ln{white-space:pre-wrap;word-break:break-word;}
+  .log .u{color:#7fd3ff;} .log .b{color:var(--gold);} .log .sys{color:var(--faint);font-style:italic;} .log .me{color:var(--green);}
+  .log .tag{color:var(--faint);border:1px solid var(--line);border-radius:3px;padding:0 5px;margin-right:6px;font-size:10.5px;text-transform:lowercase;}
+
+  .out{position:sticky;bottom:16px;z-index:5;background:rgba(18,21,28,.96);border:1px solid var(--line2);border-radius:4px;
+    padding:16px 18px;backdrop-filter:blur(10px);box-shadow:0 18px 50px rgba(0,0,0,.6);}
+  .btns{display:flex;gap:9px;}
+  .btns button.act{flex:1 1 0;justify-content:center;}
+  /* eligible-to-click: Queue rings, Smart Queue gleams */
+  @keyframes readyRing{0%{box-shadow:0 0 0 0 rgba(255,184,51,.4);}70%{box-shadow:0 0 0 8px rgba(255,184,51,0);}100%{box-shadow:0 0 0 0 rgba(255,184,51,0);}}
+  button.act.queue.ready{border-color:var(--gold-line);color:var(--gold);animation:readyRing 1.8s ease-out infinite;}
+  @keyframes gleam{0%{left:-60%;}60%{left:140%;}100%{left:140%;}}
+  .smart.ready::after{content:'';position:absolute;top:0;bottom:0;left:-60%;width:40%;pointer-events:none;
+    background:linear-gradient(105deg,transparent 10%,rgba(255,255,255,.5) 50%,transparent 90%);
+    transform:skewX(-20deg);animation:gleam 2.6s ease-in-out infinite;}
+  @media (prefers-reduced-motion:reduce){button.act.ready{animation:none;}.smart.ready::after{display:none;}}
+  button.act{border:none;cursor:pointer;border-radius:3px;padding:0 18px;height:48px;font-family:var(--font);font-weight:700;
+    letter-spacing:.08em;text-transform:uppercase;font-size:12.5px;display:inline-flex;align-items:center;gap:8px;transition:.15s;white-space:nowrap;}
+  button.act:disabled{opacity:.35;cursor:not-allowed;}
+  button.act.sm{height:38px;font-size:11.5px;padding:0 14px;}
+  .smart{background:var(--gold);color:#1a1206;position:relative;overflow:hidden;}
+  .smart:hover:not(:disabled){background:#ffc759;}
+  .queue{background:none;color:var(--text);border:1px solid var(--line2);} .queue:hover:not(:disabled){border-color:var(--gold-line);color:var(--gold);}
+  .ghost{background:none;color:var(--muted);border:1px solid var(--line);} .ghost:hover:not(:disabled){border-color:var(--line2);color:var(--text);}
+  .ghost.done{color:var(--green);border-color:var(--green);}
+  .twitch{background:none;color:var(--purple);border:1px solid rgba(182,155,255,.35);} .twitch:hover:not(:disabled){border-color:var(--purple);background:rgba(182,155,255,.1);}
+
+  .toggle{display:inline-flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--muted);user-select:none;}
+  .toggle input{display:none;}
+  .toggle .tk{width:36px;height:20px;border-radius:999px;background:var(--bg);border:1px solid var(--line2);position:relative;transition:.15s;flex:0 0 auto;}
+  .toggle .tk::after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--faint);transition:.15s;}
+  .toggle input:checked + .tk{background:var(--gold-soft);border-color:var(--gold-line);}
+  .toggle input:checked + .tk::after{left:17px;background:var(--gold);}
+  .note{font-size:12.5px;color:var(--muted);border-left:2px solid var(--line2);padding:2px 0 2px 13px;margin-top:14px;line-height:1.6;}
+  .note code{color:var(--gold);font-size:12px;}
+  details{margin-top:14px;} details>summary{cursor:pointer;color:var(--faint);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;}
+  details>summary:hover{color:var(--text);}
+  .steps2{color:var(--muted);font-size:13px;padding-left:18px;margin:12px 0 0;} .steps2 li{margin-bottom:7px;} .steps2 code{color:var(--gold);}
+  footer{text-align:center;color:var(--faint);font-size:12px;margin-top:30px;line-height:1.7;}
+  .empty{color:var(--faint);font-size:13px;padding:8px 2px;}
+  .linkbtn{background:none;border:none;color:var(--faint);cursor:pointer;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;padding:0;}
+  .linkbtn:hover{color:var(--gold);}
+  .yousum{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:14.5px;color:var(--muted);}
+  .yousum .ysn{color:var(--text);font-weight:600;letter-spacing:.01em;}
+  .yousum:hover .ysn{color:var(--gold);}
+  .yousum .ysd{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);}
+  .hide{display:none !important;}
+
+  /* help button (reopens onboarding) */
+  .help{position:fixed;top:16px;left:16px;z-index:60;width:34px;height:34px;border-radius:3px;
+    background:rgba(20,23,30,.92);border:1px solid var(--line2);color:var(--muted);font-weight:700;
+    font-size:16px;cursor:pointer;backdrop-filter:blur(8px);box-shadow:0 8px 30px rgba(0,0,0,.5);transition:.15s;}
+  .help:hover{color:var(--gold);border-color:var(--gold-line);}
+
+  /* first-run onboarding */
+  .ob{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px;
+    background:rgba(6,8,11,.8);backdrop-filter:blur(7px);animation:obIn .25s ease;}
+  @keyframes obIn{from{opacity:0}to{opacity:1}}
+  .ob-card{position:relative;max-width:540px;width:100%;max-height:92vh;overflow:auto;
+    background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--gold-line);
+    border-radius:4px;padding:30px 30px 26px;box-shadow:0 30px 90px rgba(0,0,0,.7);clip-path:var(--cut);}
+  .ob-x{position:absolute;top:12px;right:15px;background:none;border:none;color:var(--faint);font-size:20px;cursor:pointer;line-height:1;}
+  .ob-x:hover{color:var(--gold);}
+  .ob-emblem{width:58px;height:58px;margin-bottom:14px;}
+  .ob-kicker{font-size:11px;font-weight:600;letter-spacing:.3em;text-transform:uppercase;color:var(--gold);}
+  .ob-card h2{font-size:25px;font-weight:700;letter-spacing:-.02em;margin:7px 0 6px;line-height:1.1;}
+  .ob-lead{color:var(--muted);font-size:14px;margin:0 0 20px;}
+  .ob-steps{list-style:none;margin:0 0 18px;padding:0;display:flex;flex-direction:column;gap:14px;}
+  .ob-steps li{display:flex;gap:13px;align-items:flex-start;}
+  .ob-num{flex:0 0 auto;display:inline-grid;place-items:center;width:24px;height:24px;margin-top:1px;
+    background:var(--gold-soft);color:var(--gold);font-weight:700;font-size:12px;border-radius:2px;}
+  .ob-steps b{font-size:14px;} .ob-steps span{color:var(--muted);font-size:13px;}
+  .ob-steps code{background:rgba(255,255,255,.06);padding:1px 5px;border-radius:3px;font-size:12px;color:var(--text);}
+  .ob-steps a{color:var(--gold);text-decoration:none;border-bottom:1px solid var(--gold-line);}
+  .ob-tip{background:var(--gold-soft);border:1px solid var(--gold-line);border-radius:3px;padding:11px 13px;
+    font-size:12.5px;color:var(--text);margin-bottom:20px;}
+  .ob-actions{display:flex;align-items:center;gap:18px;flex-wrap:wrap;}
+  .ob-skip{color:var(--faint);font-size:12.5px;cursor:pointer;border-bottom:1px solid transparent;}
+  .ob-skip:hover{color:var(--muted);}
+
+</style>
+</head>
+<body>
+<button class="help" id="helpBtn" title="How to use this app">?</button>
+<div class="chip" id="chip"><span class="dot"></span><b id="chipId">Set Bungie name</b><span class="state" id="chipState">offline</span><button id="chipBtn" class="hide">disconnect</button></div>
+
+<!-- first-run onboarding (also reopened via the ? button) -->
+<div class="ob hide" id="onboard">
+  <div class="ob-card">
+    <button class="ob-x" id="obClose" title="Close">✕</button>
+    <div class="ob-emblem"><svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%"><defs><linearGradient id="obg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b212b"/><stop offset="1" stop-color="#0b0e13"/></linearGradient></defs><rect width="64" height="64" rx="12" fill="url(#obg)" stroke="rgba(255,184,51,.35)"/><path fill="#ffb833" fill-rule="evenodd" d="M32 6 57 32 32 58 7 32Z M32 16 47 32 32 48 17 32Z"/><path fill="none" stroke="#ffb833" stroke-width="4.4" stroke-linejoin="round" stroke-linecap="round" d="M22 37 32 27 42 37"/></svg></div>
+    <div class="ob-kicker">Destiny 2 · Checkpoint Queue Helper</div>
+    <h2>Skip the grind — grab the checkpoint.</h2>
+    <p class="ob-lead">Queue on Destiny 2 checkpoint bots and jump straight to a boss or secret chest. Three quick things and you're set:</p>
+    <ol class="ob-steps">
+      <li><span class="ob-num">1</span><div><b>Enter your Bungie name</b><br><span>Exactly as in-game, e.g. <code>Guardian#1234</code>. The bot invites this ID when it's your turn.</span></div></li>
+      <li><span class="ob-num">2</span><div><b>Connect Twitch — for one-click queueing</b><br><span>Get a free token at <a href="https://twitchtokengenerator.com/" target="_blank" rel="noreferrer">twitchtokengenerator.com</a> (tick <code>chat:read</code> + <code>chat:edit</code>), copy the <b>Access Token</b>, and paste it with your Twitch username. Stored only on this device.</span></div></li>
+      <li><span class="ob-num">3</span><div><b>Pick an activity &amp; checkpoint, then Smart Queue</b><br><span>With <b>Auto</b> on (default), Smart Queue races every confirmed-active bot (green dot), keeps the quickest line (wait time, then position) and leaves the rest for you.</span></div></li>
+    </ol>
+    <div class="ob-tip">When it's your turn the bot invites your Bungie ID — join, load in, wipe once, then leave. Checkpoint kept.</div>
+    <details style="margin:0 0 18px">
+      <summary style="cursor:pointer;color:var(--faint);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.14em">More detail</summary>
+      <ul class="steps2" style="margin-top:10px">
+        <li><b>Auto</b> off (tap it, or tap a bot pill): hand-pick bots — highlighted pills are exactly what <b>Queue</b> sends to. Smart Queue sits out until Auto is back on.</li>
+        <li><b>Bot pills</b>: power icon turns a bot off without removing it · <b>+</b> adds your own · new bots you add can be suggested to the shared list everyone gets.</li>
+        <li><b>Positions</b> float on the right, one row per bot, quickest first — ✕ leaves that queue. Auto-update polls every queue you're in.</li>
+        <li><b>Live feed</b>: tabs appear for bots you're engaged with · the corner button full-screens the chat (Esc returns).</li>
+      </ul>
+    </details>
+    <div class="ob-actions">
+      <button class="act queue" id="obGo">Let's go</button>
+      <span class="ob-skip" id="obNever">Don't show this again</span>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <header>
+    <div class="kicker">Destiny 2</div>
+    <h1>Checkpoint Queue Helper</h1>
+    <p class="sub">Choose a checkpoint and queue on the bots. Connect Twitch once for one-click queueing, a live position read-out, and auto shortest-queue across bots.</p>
+  </header>
+
+  <!-- live positions, one row per bot (floats on the right on wide screens) -->
+  <aside class="posdock" id="posDock">
+    <div class="pd-head">Queue positions</div>
+    <div class="pd-rows" id="pdRows"><div class="pd-empty">Not in any queue yet. Connect Twitch &amp; queue — your position on each bot shows here.</div></div>
+  </aside>
+
+  <!-- 1 You (collapses once filled) -->
+  <div class="card" id="youCard">
+    <div class="step"><span class="n">1</span> You <button type="button" class="linkbtn hide" id="youEdit" style="margin-left:auto">Edit</button></div>
+    <div class="yousum hide" id="youSummary"></div>
+    <div id="youBody">
+      <input id="bungie" type="text" placeholder="Bungie name — e.g. Name#1234" autocomplete="off" spellcheck="false" />
+      <div class="hint" id="bungieHint"></div>
+      <div class="row" style="margin-top:12px">
+        <input id="twUser" type="text" placeholder="Twitch username (optional)" style="max-width:210px" autocomplete="off" spellcheck="false" />
+        <input id="twToken" type="password" placeholder="chat token (oauth:…)" style="max-width:260px" autocomplete="off" spellcheck="false" />
+        <button class="act twitch sm" id="connectBtn">Connect</button>
+      </div>
+      <div class="note">Connecting Twitch enables one-click queueing. Get a token at <a href="https://twitchtokengenerator.com/" target="_blank" rel="noreferrer">twitchtokengenerator.com</a> (scopes <code>chat:read</code> + <code>chat:edit</code>), paste the <b>Access Token</b>. Stored only on this device.</div>
+    </div>
+  </div>
+
+  <!-- 2 Activity + difficulty -->
+  <div class="card">
+    <div class="step"><span class="n">2</span> Activity <span class="r" id="diffR"></span></div>
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-cat="raids">Raids</button>
+      <button class="tab" data-cat="dungeons">Dungeons</button>
+      <button class="tab" data-cat="campaign">Campaign</button>
+      <button class="tab" data-cat="pantheon">Pantheon</button>
+    </div>
+    <div class="grid" id="activityGrid"></div>
+    <div class="diffrow hide" id="diffRow">
+      <span class="lbl">Difficulty</span>
+      <div class="seg" id="diffSeg"><button data-diff="n" class="on">Normal</button><button data-diff="m">Master</button></div>
+    </div>
+  </div>
+
+  <!-- 3 Checkpoint -->
+  <div class="card">
+    <div class="step"><span class="n">3</span> Checkpoint <span class="r" id="encFor"></span></div>
+    <input id="encInput" class="hide" type="text" placeholder="encounter — one word (e.g. crota, witness, boss)" autocomplete="off" spellcheck="false" disabled />
+    <div class="row" id="encChips" style="margin-top:10px"></div>
+    <div class="hint" id="encHint" style="margin-top:8px">Pick an activity, then tap the checkpoint you want.</div>
+  </div>
+
+  <!-- 4 Channels -->
+  <div class="card">
+    <div class="step"><span class="n">4</span> Bot channels
+      <button class="maxbtn autobtn" id="autoBtn" title="Auto: every confirmed-active bot (green dot) is in play and Smart Queue picks the quickest — turn off to hand-pick bots for Queue">Auto</button>
+      <button class="maxbtn addbtn" id="addToggle" title="Add a bot channel"><svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+    </div>
+    <div class="row" id="chanPills" style="margin-bottom:10px"></div>
+    <div class="addrow" id="addRow">
+      <div>
+        <input id="addChan" type="text" placeholder="add a bot channel…" autocomplete="off" spellcheck="false" />
+        <button class="act ghost sm" id="addChanBtn">Add</button>
+      </div>
+    </div>
+    <span class="hint" id="chanHint" style="margin:0"></span>
+  </div>
+
+  <!-- 5 Live -->
+  <div class="card" id="liveCard">
+    <div class="step"><span class="n">5</span> Live feed
+      <label class="toggle" style="margin-left:auto"><input type="checkbox" id="onlyMine" /><span class="tk"></span> Only my updates</label>
+      <button class="maxbtn" id="maxBtn" title="Full-screen the chat"></button>
+    </div>
+    <div class="feedtabs" id="feedTabs"></div>
+    <div class="log" id="log"></div>
+    <div class="row" style="margin-top:10px">
+      <label class="toggle"><input type="checkbox" id="autoPos" /><span class="tk"></span> Auto-update position</label>
+      <select id="posEvery"><option value="60000">every 1 min</option><option value="120000" selected>every 2 min</option><option value="180000">every 3 min</option></select>
+      <button class="act ghost sm" id="posNow">Check now</button>
+    </div>
+  </div>
+
+  <!-- actions -->
+  <div class="out">
+    <div class="btns">
+      <button class="act smart" id="smartBtn">Smart Queue</button>
+      <button class="act queue" id="queueBtn">Queue</button>
+    </div>
+  </div>
+
+  <footer>Not affiliated with Bungie or the bot operators.</footer>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════════════
+   DATA — checkpoint = [value, label].  Command: !queue <code> <value> <n|m> <Bungie>
+   Values match the original tool exactly (encounters = number, chests/loot = label
+   with spaces removed e.g. "Chest1", "Maze/Chest3", "Post-Templar").
+   ════════════════════════════════════════════════════════════════════════════ */
+// Codes are from the live D2Checkpoints helper (case-insensitive). The bot takes a
+// ONE-WORD encounter name (free text) — `enc` below are quick-pick suggestions; you
+// can always type any checkpoint name in the field. Command: !queue <code> <enc> <n|m> <bungie>
+// img = official activity art (pgcrImage) from the public Destiny 2 manifest, hotlinked from bungie.net
+const BNET='https://www.bungie.net';
+const DATA = {
+  raids: [
+    { code:'DP',   name:'Desert Perpetual',    master:false, enc:['koregos'], img:'/img/destiny_content/pgcr/raid_gateways.jpg' },
+    { code:'EDP',  name:'Desert Perpetual (Epic)', master:false, enc:['koregos'], img:'/img/destiny_content/pgcr/raid_gateways.jpg' },
+    { code:'SE',   name:"Salvation's Edge",    master:true,  enc:['substratum','dissipation','chest1','repository','verity','chest2','witness'], img:'/img/destiny_content/pgcr/raid_splinter.jpg' },
+    { code:'CE',   name:"Crota's End",         master:true,  enc:['abyss','bridge','chest2','ir-yut','crota'], img:'/img/destiny_content/pgcr/raid_crotas_end.jpg' },
+    { code:'RoN',  name:'Root of Nightmares',  master:true,  enc:['cataclysm','chest1','scission','chest2','macrocosm','nezarec'], img:'/img/destiny_content/pgcr/raid_root_of_nightmares.jpg' },
+    { code:'KF',   name:"King's Fall",         master:true,  enc:['totems','warpriest','maze','golgoroth','wall','daughters','oryx'], img:'/img/destiny_content/pgcr/raid_kings_fall.jpg' },
+    { code:'VotD', name:'Vow of the Disciple', master:true,  enc:['chest1','acquisition','caretaker','chest2','exhibition','rhulk'], img:'/img/destiny_content/pgcr/raid_nemesis.jpg' },
+    { code:'VoG',  name:'Vault of Glass',      master:true,  enc:['confluxes','oracles','templar','post-templar','gatekeeper','atheon'], img:'/img/destiny_content/pgcr/vault_of_glass.jpg' },
+    { code:'DSC',  name:'Deep Stone Crypt',    master:false, enc:['security','atraks','chest2','descent','taniks'], img:'/img/destiny_content/pgcr/europa-raid-deep-stone-crypt.jpg' },
+    { code:'GoS',  name:'Garden of Salvation', master:false, enc:['evade','chest1','summon','consecrated','chest2','sanctified'], img:'/img/destiny_content/pgcr/raid_garden_of_salvation.jpg' },
+    { code:'LW',   name:'Last Wish',           master:false, enc:['kalli','shuro-chi','chest2','morgeth','vault','riven'], img:'/img/destiny_content/pgcr/raid_beanstalk.jpg' },
+  ],
+  dungeons: [
+    { code:'SD',   name:'Sundered Doctrine',   master:true,  enc:['flooded','chest1','zoetic','chest2','kerrev','boss'], img:'/img/destiny_content/pgcr/dungeon_delver.jpg' },
+    { code:'VH',   name:"Vesper's Host",       master:true,  enc:['raneiks','chest1','chest2','boss'], img:'/img/destiny_content/pgcr/vespers_host.jpg' },
+    { code:'WR',   name:"Warlord's Ruin",      master:true,  enc:['rathil','tempest','chest','hefnd','boss'], img:'/img/destiny_content/pgcr/dungeon_ridgeline.jpg' },
+    { code:'GotD', name:'Ghosts of the Deep',  master:true,  enc:['ritual','chest1','ecthar','simmumah','boss'], img:'/img/destiny_content/pgcr/dungeon_ghosts_of_the_deep.jpg' },
+    { code:'SotW', name:'Spire of the Watcher',master:true,  enc:['chest1','ascent','akelous','chest2','persys','boss'], img:'/img/destiny_content/pgcr/dungeon_spire_of_the_watcher.jpg' },
+    { code:'D',    name:'Duality',             master:true,  enc:['gahlran','chest1','vault','chest2','caiatl','boss'], img:'/img/destiny_content/pgcr/dungeon_duality.jpg' },
+    { code:'GoA',  name:'Grasp of Avarice',    master:true,  enc:['chest1','ogre','chest2','shield','avarokk','boss'], img:'/img/destiny_content/pgcr/30th-anniversary-grasp-of-avarice.jpg' },
+    { code:'P',    name:'Prophecy',            master:false, enc:['phalanx','chest1','cube','chest2','kell','boss'], img:'/img/destiny_content/pgcr/dungeon_prophecy.jpg' },
+    { code:'PoH',  name:'Pit of Heresy',       master:false, enc:['necropolis','chamber','zulmak','boss'], img:'/img/destiny_content/pgcr/dungeon_pit_of_heresy.jpg' },
+    { code:'ST',   name:'Shattered Throne',    master:false, enc:['vorgeth','descent','dul-incaru','boss'], img:'/img/destiny_content/pgcr/mission_labyrinth.jpg' },
+    { code:'E',    name:'Equilibrium',         master:false, enc:['boss'], img:'/img/destiny_content/pgcr/dungeon_equilibrium.jpg' },
+  ],
+  campaign: [
+    { code:'FS',   name:'The Final Shape', master:true,  enc:['transmigration','temptation','exegesis','requiem','ascent','dissent','iconoclasm'], img:'/img/destiny_content/pgcr/tfs_m1.jpg' },
+    { code:'LF',   name:'Lightfall',       master:true,  enc:['first-contact','under-siege','downfall','breakneck','on-the-verge','no-time-left','headlong','desperate-measures'], img:'/img/destiny_content/pgcr/lightfall_mission_chaos_orbit.jpg' },
+    { code:'WQ',   name:'Witch Queen',     master:true,  enc:[], img:'/img/destiny_content/pgcr/mission_genesis.jpg' },
+    { code:'EOF',  name:'Edge of Fate',    master:true,  enc:[], img:'/img/destiny_content/pgcr/kepler_freeroam.jpg' },
+    { code:'R',    name:'Renegades',       master:true,  enc:[], img:'/img/destiny_content/pgcr/campaign_renegades.jpg' },
+    { code:'SW',   name:'Shared Wisdom',   master:false, enc:['helm'], img:'/img/destiny_content/pgcr/solo_kepler.jpg' },
+  ],
+  // Pantheon 2.0 (Monument of Triumph) — the 3 gauntlets the bot exposes, with
+  // their actual boss rosters. Encounter = the boss you want the checkpoint at.
+  pantheon: [
+    { code:'P-Calus',       name:'Calus Resplendent',      master:false, enc:['argos','gahlran','calus'], img:'/img/destiny_content/pgcr/pantheon_calus.jpg' },
+    { code:'P-Morgeth',     name:'Morgeth Surpassing',     master:false, enc:['warpriest','consecrated','morgeth'], img:'/img/destiny_content/pgcr/pantheon_morgeth.jpg' },
+    { code:'P-Insurrection',name:'Insurrection Prime',     master:false, enc:['argos','gahlran','calus','warpriest','consecrated','morgeth','insurrection'], img:'/img/destiny_content/pgcr/pantheon_insurrection_prime_revolutionary.jpg' },
+  ],
+};
+const DEFAULT_CHANNELS=['d2checkpoints','luckbot9','guardiandownbot','d2chests','luckstruck9','destinycheckpoints','icebreakercatty'];
+const POS_CMD='!pos', LEAVE_CMD='!leave';   // !pos = position, !leave = leave queue
+const CHEST_SVG='<svg class="chesticon" viewBox="0 0 24 24" width="15" height="15"><path d="M4 10h16v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8z" fill="#caa24a"/><path d="M4 10c0-3.4 3.6-5.2 8-5.2s8 1.8 8 5.2H4z" fill="#e7b840"/><rect x="4" y="11.4" width="16" height="2.3" fill="#8a6a22"/><rect x="10.6" y="10.4" width="2.8" height="4.6" rx=".6" fill="#5a4514"/><circle cx="12" cy="12.7" r="1" fill="#fff0c4"/></svg>';
+
+const $=s=>document.querySelector(s);
+const bungieRe=/^.{1,}#\d{4}$/;
+const isChest=v=>!/^\d+$/.test(v);           // numbered = encounter; anything else = chest/loot
+const stripNum=l=>l.replace(/^\d+:\s*/,'');  // "1: Substratum" -> "Substratum"
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const ls={get:(k,d)=>localStorage.getItem('cph.'+k)??d,set:(k,v)=>localStorage.setItem('cph.'+k,v),del:k=>localStorage.removeItem('cph.'+k)};
+const state={cat:'raids',activity:null,enc:'',diff:'n',
+  shared:JSON.parse(ls.get('sharedCh',JSON.stringify(DEFAULT_CHANNELS))),   // curated list (channels.json), last known copy
+  local:JSON.parse(ls.get('localCh','[]')),                                 // this user's own additions
+  off:new Set(JSON.parse(ls.get('offCh','[]'))),                            // disabled channels (kept, not removed)
+  sel:new Set(JSON.parse(ls.get('selCh','[]'))),                            // highlighted = the queues you want
+  active:ls.get('active',DEFAULT_CHANNELS[0])};
+if(ls.get('selCh')==null&&state.active)state.sel=new Set([state.active]);   // seed highlight from the old single-active format
+// one-time migration from the old single-list format (user additions kept; removed defaults resurface as disabled-able pills)
+if(ls.get('localCh')==null&&ls.get('channels')!=null){
+  state.local=JSON.parse(ls.get('channels','[]')).filter(c=>!state.shared.includes(c));
+  ls.set('localCh',JSON.stringify(state.local));ls.del('channels');}
+const chanAll=()=>[...state.shared,...state.local.filter(c=>!state.shared.includes(c))];
+const chanOn=()=>chanAll().filter(c=>!state.off.has(c));
+state.auto=ls.get('auto','1')==='1';                                        // Auto: confirmed-active bots in play, Smart Queue drives
+const selOn=()=>state.auto?chanOn().filter(c=>irc.joined.has(c)):[...state.sel].filter(c=>chanOn().includes(c));
+
+/* ── identity chip ─────────────────────────────────── */
+function renderChip(){const bn=bungieEl.value.trim(),c=$('#chip'),k=irc.connState;
+  c.className='chip'+(k==='on'?' on':k==='err'?' err':k==='connecting'?' connecting':'');
+  $('#chipId').textContent=bungieRe.test(bn)?bn:'Set Bungie name';
+  $('#chipState').textContent=k==='on'?'connected':k==='connecting'?'connecting…':k==='err'?'connect failed':'offline';
+  $('#chipBtn').classList.toggle('hide',k!=='on');}
+
+/* ── Bungie + "You" collapse ───────────────────────── */
+const bungieEl=$('#bungie');bungieEl.value=ls.get('bungie','');
+let youEditing=false;
+bungieEl.addEventListener('input',()=>{ls.set('bungie',bungieEl.value.trim());validateBungie();renderChip();refreshYou();render();});
+function validateBungie(){const v=bungieEl.value.trim(),ok=bungieRe.test(v),h=$('#bungieHint');
+  bungieEl.classList.toggle('bad',v.length>0&&!ok);
+  h.textContent=!v?'Enter your Bungie ID with the # and 4-digit code.':!ok?'Should end with #1234.':'Looks good — shown in the indicator (top-right).';
+  h.className='hint'+(v&&!ok?' err':ok?' ok':' err');return ok;}
+function refreshYou(){const valid=bungieRe.test(bungieEl.value.trim()),collapsed=valid&&!youEditing;
+  $('#youBody').classList.toggle('hide',collapsed);
+  $('#youSummary').classList.toggle('hide',!collapsed);
+  $('#youEdit').classList.toggle('hide',!valid);
+  $('#youEdit').textContent=collapsed?'Edit':'Hide';
+  if(collapsed){const tw=irc.connState==='on'?'Twitch connected':'Twitch not connected';
+    $('#youSummary').innerHTML=`<span class="ysn">${esc(bungieEl.value.trim())}</span><span class="ysd">${tw}</span>`;}}
+$('#youEdit').addEventListener('click',()=>{youEditing=!youEditing;refreshYou();if(youEditing)setTimeout(()=>bungieEl.focus(),0);});
+$('#youSummary').addEventListener('click',()=>{youEditing=true;refreshYou();setTimeout(()=>bungieEl.focus(),0);});
+
+/* ── channels ──────────────────────────────────────── */
+const REPO='https://github.com/THE-MOESHEN/d2-checkpoint-helper';
+const PWR='<svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true"><path d="M12 3.2v8" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none"/><path d="M7 6.4a7.4 7.4 0 1 0 10 0" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none"/></svg>';
+function saveCh(){ls.set('localCh',JSON.stringify(state.local));ls.set('offCh',JSON.stringify([...state.off]));ls.set('selCh',JSON.stringify([...state.sel]));ls.set('auto',state.auto?'1':'0');ls.set('active',state.active);}
+function ensureActive(){const on=chanOn();
+  state.sel=new Set([...state.sel].filter(c=>on.includes(c)));
+  if(state.sel.size&&!state.sel.has(state.active))state.active=[...state.sel][0];
+  if(!on.includes(state.active))state.active=on[0]||'';}
+function paintChannels(){
+  $('#autoBtn').classList.toggle('on',state.auto);
+  const lit=new Set(selOn());
+  $('#chanPills').innerHTML=chanAll().map(c=>{const off=state.off.has(c),mine=!state.shared.includes(c);
+    return `<span class="pill ${lit.has(c)&&!off?'active':''} ${irc.joined.has(c)?'live':''} ${off?'off':''}" data-ch="${c}"><span class="d"></span>${esc(c)}`
+      +`<button class="x t" data-tog="${c}" title="${off?'turn this bot back on':'turn this bot off (kept in the list)'}">${PWR}</button>`
+      +(mine?`<button class="x" data-del="${c}" title="remove (your own addition)">✕</button>`:'')+`</span>`;}).join('')
+  ||'<span class="empty">No channels — tap + above to add one.</span>';
+  paintFeedTabs();}
+$('#chanPills').addEventListener('click',e=>{
+  const tog=e.target.closest('[data-tog]');
+  if(tog){const c=tog.dataset.tog;
+    if(state.off.has(c)){state.off.delete(c);if(irc.connected)irc.join(c);}
+    else{state.off.add(c);irc.part(c);sysLog(`Bot off: ${c} — kept in the list, tap the power button to bring it back.`);}
+    ensureActive();saveCh();paintChannels();render();return;}
+  const del=e.target.closest('[data-del]');
+  if(del){const c=del.dataset.del;state.local=state.local.filter(x=>x!==c);state.off.delete(c);irc.part(c);ensureActive();saveCh();paintChannels();render();return;}
+  const p=e.target.closest('[data-ch]');if(!p)return;const c=p.dataset.ch;
+  if(state.off.has(c))return;
+  if(state.auto){state.auto=false;state.sel=new Set([c]);state.active=c;}   // touching a pill = taking manual control
+  else if(state.sel.has(c)){state.sel.delete(c);if(state.active===c)state.active=[...state.sel][0]||chanOn()[0]||'';}
+  else{state.sel.add(c);state.active=c;}
+  saveCh();paintChannels();render();});
+$('#autoBtn').addEventListener('click',()=>{state.auto=!state.auto;saveCh();paintChannels();render();
+  sysLog(state.auto?'Auto on — every enabled bot is in play, Smart Queue picks the quickest.':'Auto off — tap pills to highlight bots, then Queue sends to just those.');});
+function showAdd(on){$('#addRow').classList.toggle('open',on);$('#addToggle').classList.toggle('open',on);
+  if(on)setTimeout(()=>$('#addChan').focus(),80);}
+$('#addToggle').addEventListener('click',()=>showAdd(!$('#addRow').classList.contains('open')));
+$('#addChanBtn').addEventListener('click',addChannel);
+$('#addChan').addEventListener('keydown',e=>{if(e.key==='Enter')addChannel();if(e.key==='Escape')showAdd(false);});
+function addChannel(){const v=$('#addChan').value.trim().replace(/^@/,'').toLowerCase();$('#addChan').value='';
+  if(!v)return;
+  showAdd(false);
+  if(chanAll().includes(v)){state.off.delete(v);}
+  else{state.local.push(v);if(irc.connected)irc.join(v);}
+  state.sel.add(v);state.active=v;saveCh();paintChannels();render();
+  if(!state.shared.includes(v)){
+    const url=`${REPO}/issues/new?title=${encodeURIComponent('Add bot channel: '+v)}&body=${encodeURIComponent('Please add `'+v+'` to the shared bot list.\n\n(Sent from the Checkpoint Queue Helper.)')}`;
+    $('#chanHint').innerHTML=`Added for you. <a href="${url}" target="_blank" rel="noreferrer">Suggest <b>${esc(v)}</b> for everyone ↗</a> — goes live for all users once approved (needs a GitHub login).`;}}
+/* shared list refresh — channels.json is the source of truth published for everyone */
+fetch('channels.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{
+  if(!j||!Array.isArray(j.channels))return;
+  const fresh=[...new Set(j.channels.map(c=>String(c).toLowerCase().trim()).filter(Boolean))];
+  const added=fresh.filter(c=>!state.shared.includes(c)&&!state.local.includes(c));
+  state.shared=fresh;ls.set('sharedCh',JSON.stringify(fresh));
+  state.local=state.local.filter(c=>!fresh.includes(c));
+  ensureActive();saveCh();paintChannels();render();
+  if(added.length){sysLog(`📡 Shared bot list updated — new: ${added.join(', ')}`);
+    if(irc.connected)added.filter(c=>!state.off.has(c)).forEach(c=>irc.join(c));}
+}).catch(()=>{});
+
+/* ── tabs / activity / difficulty / checkpoint ─────── */
+$('#tabs').addEventListener('click',e=>{const t=e.target.closest('.tab');if(!t)return;state.cat=t.dataset.cat;state.activity=null;state.enc='';$('#encInput').value='';
+  [...$('#tabs').children].forEach(x=>x.classList.toggle('active',x===t));paintActivities();paintDiff();paintEncounters();render();});
+function paintActivities(){$('#activityGrid').innerHTML=DATA[state.cat].map(a=>{
+  const art=a.img?` style="background-image:linear-gradient(180deg,rgba(11,13,18,.42),rgba(11,13,18,.88)),url('${BNET+a.img}')"`:'';
+  return `<button class="chip-a ${state.activity===a.code?'active':''}" data-code="${a.code}"${art}>${a.name}<span class="code">${a.code}</span></button>`;}).join('');}
+$('#activityGrid').addEventListener('click',e=>{const b=e.target.closest('[data-code]');if(!b)return;state.activity=b.dataset.code;state.diff='n';state.enc='';$('#encInput').value='';paintActivities();paintDiff();paintEncounters();render();});
+const curAct=()=>DATA[state.cat].find(a=>a.code===state.activity);
+function paintDiff(){const a=curAct(),row=$('#diffRow');
+  if(a&&a.master){row.classList.remove('hide');[...$('#diffSeg').children].forEach(x=>{x.classList.toggle('on',x.dataset.diff===state.diff);x.classList.toggle('master',x.dataset.diff==='m');});}
+  else row.classList.add('hide');
+  $('#diffR').textContent=a?(a.master?(state.diff==='m'?'Master':'Normal'):'Normal only'):'';}
+$('#diffSeg').addEventListener('click',e=>{const b=e.target.closest('[data-diff]');if(!b)return;state.diff=b.dataset.diff;paintDiff();render();});
+function paintEncounters(){const a=curAct(),chips=$('#encChips'),inp=$('#encInput'),hint=$('#encHint');
+  if(!a){chips.innerHTML='';$('#encFor').textContent='';inp.classList.add('hide');inp.disabled=true;
+    hint.textContent='Pick an activity, then tap the checkpoint you want.';return;}
+  $('#encFor').textContent=a.name;
+  if(a.enc.length){inp.classList.add('hide');inp.disabled=true;
+    chips.innerHTML=a.enc.map(t=>{const ch=isChestTok(t);
+      return `<button class="pill enc-pill ${ch?'chest':''} ${state.enc===t?'active':''}" data-tok="${t}">${ch?`<span class="cb">${CHEST_SVG}</span>`:''}${esc(t)}</button>`;}).join('');
+    hint.textContent=state.enc?'':'Tap the checkpoint you want.';}
+  else{inp.classList.remove('hide');inp.disabled=false;chips.innerHTML='';
+    hint.textContent='No preset list for this one — type the checkpoint name (one word).';}}
+function isChestTok(t){return /^chest\d*$|^maze$|^wall$|^post-templar$/i.test(t);}
+$('#encChips').addEventListener('click',e=>{const b=e.target.closest('[data-tok]');if(!b)return;
+  state.enc=state.enc===b.dataset.tok?'':b.dataset.tok;paintEncounters();render();});
+$('#encInput').addEventListener('input',()=>{state.enc=$('#encInput').value.trim();render();});
+
+/* ── command + render ──────────────────────────────── */
+function buildCommand(){const a=curAct(),bn=bungieEl.value.trim(),enc=state.enc;if(!a||!enc||!bungieRe.test(bn))return null;
+  return `!queue ${a.code} ${enc} ${a.master?state.diff:'n'} ${bn}`;}
+function render(){const ready=!!buildCommand(),nSel=selOn().length;
+  $('#smartBtn').classList.toggle('ready',ready&&irc.connected&&state.auto&&nSel>0);
+  $('#smartBtn').classList.toggle('idle',!state.auto);
+  $('#queueBtn').classList.toggle('ready',ready&&irc.connected&&!state.auto&&nSel>0);
+  $('#queueBtn').classList.toggle('idle',state.auto);
+  $('#queueBtn').textContent=!irc.connected?'Queue (connect Twitch)':state.auto?'Queue':`Queue (${nSel})`;}
+
+/* buttons are never greyed out — a click walks you to whatever is missing */
+function guide(btn){
+  if(!bungieRe.test(bungieEl.value.trim())){flash(btn,'Set Bungie name ↑');youEditing=true;refreshYou();bungieEl.focus();return true;}
+  if(!state.activity){flash(btn,'Pick an activity ↑');return true;}
+  if(!state.enc){flash(btn,'Pick a checkpoint ↑');return true;}
+  return false;}
+function needTwitch(btn){if(irc.connected)return false;
+  sysLog('⚠ Connect Twitch first (username + token → Connect).');youEditing=true;refreshYou();flash(btn,'Connect Twitch ↑');return true;}
+
+/* ── Twitch IRC ────────────────────────────────────── */
+const irc={ws:null,connected:false,connState:'off',joined:new Set(),user:'',token:'',onmsg:null,
+  manual:false,retry:0,reconnT:null,pingT:null,
+  connect(user,token){
+    if(user!==undefined)this.user=user.toLowerCase().trim();
+    if(token!==undefined){this.token=token.trim();if(this.token&&!/^oauth:/.test(this.token))this.token='oauth:'+this.token;}
+    if(!this.user||!this.token)return;
+    this.manual=false;clearTimeout(this.reconnT);this.reconnT=null;
+    // tear down any previous socket so its handlers can't trigger more reconnects
+    if(this.ws){try{this.ws.onopen=this.ws.onmessage=this.ws.onclose=this.ws.onerror=null;this.ws.close();}catch{}this.ws=null;}
+    clearInterval(this.pingT);this.pingT=null;
+    this.connState='connecting';renderChip();
+    let ws;try{ws=new WebSocket('wss://irc-ws.chat.twitch.tv:443');}catch(e){this._reconnect();return;}
+    this.ws=ws;
+    ws.onopen=()=>{ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership');ws.send('PASS '+this.token);ws.send('NICK '+this.user);};
+    ws.onmessage=ev=>ev.data.split('\r\n').forEach(l=>l&&this._line(l));
+    ws.onclose=()=>{if(ws!==this.ws)return; // ignore stale sockets we replaced
+      this.connected=false;this.joined.clear();clearInterval(this.pingT);this.pingT=null;if(window.stopAutoPos)stopAutoPos();
+      if(this.manual){this.connState='off';}else{this.connState='connecting';this._reconnect();}
+      renderChip();refreshYou();paintChannels();render();};
+    ws.onerror=()=>{};},
+  _reconnect(){if(this.manual||!this.token)return;clearTimeout(this.reconnT);
+    const delay=Math.min(30000,2000*Math.pow(2,this.retry++));
+    sysLog(`Connection lost — reconnecting in ${Math.round(delay/1000)}s…`);
+    this.reconnT=setTimeout(()=>this.connect(),delay);},
+  _line(line){
+    if(line.startsWith('PING')){this.ws.send('PONG :tmi.twitch.tv');return;}
+    if(/ (001|GLOBALUSERSTATE) /.test(line)){const was=this.connected;this.connected=true;this.connState='on';this.retry=0;renderChip();youEditing=false;refreshYou();
+      chanOn().forEach(c=>this.join(c));render();if(window.startAutoPos)startAutoPos();
+      clearInterval(this.pingT);this.pingT=setInterval(()=>{try{this.ws&&this.ws.send('PING :tmi.twitch.tv');}catch{}},240000);
+      sysLog(was?'Reconnected ✓':'Connected as '+this.user);return;}
+    if(/ NOTICE /.test(line)){const msg=(line.match(/ NOTICE [^ ]* :(.*)$/)||[])[1]||line;
+      if(/authentication failed|login unsuccessful|improperly formatted auth/i.test(msg)){this.connState='err';renderChip();
+        sysLog('⚠ Login failed — regenerate your chat token (needs chat:read + chat:edit) at twitchtokengenerator.com and make sure the username matches that account.');this.disconnect();return;}
+      sysLog('Twitch: '+msg);return;}
+    const m=line.match(/^(?:@[^ ]+ )?:([^!]+)![^ ]+ PRIVMSG #([^ ]+) :(.*)$/);
+    if(m){this.onmsg&&this.onmsg(m[2],m[1],m[3].trim());}
+    const j=line.match(/:([^!]+)![^ ]+ JOIN #([^ ]+)/);if(j&&j[1].toLowerCase()===this.user){this.joined.add(j[2]);paintChannels();render();}},
+  join(c){if(c&&this.ws&&this.connected)this.ws.send('JOIN #'+c);},
+  part(c){this.joined.delete(c);if(c&&this.ws&&this.connected){try{this.ws.send('PART #'+c);}catch{}}paintChannels();},
+  say(c,msg){if(this.ws&&this.connected){try{this.ws.send(`PRIVMSG #${c} :${msg}`);return true;}catch(e){sysLog('Send failed ('+c+'): '+(e.message||e));return false;}}sysLog('⚠ Not connected — hit Connect first.');return false;},
+  disconnect(){this.manual=true;clearTimeout(this.reconnT);this.reconnT=null;clearInterval(this.pingT);this.pingT=null;try{this.ws&&this.ws.close();}catch{}this.connected=false;this.connState='off';this.joined.clear();}
+};
+
+/* ── live feed + position parse ────────────────────── */
+function matchesMe(nick,text){if(!nick)return false;const me=(irc.user||'').toLowerCase();
+  if(me&&nick.toLowerCase()===me)return true;const t=(text||'').toLowerCase();if(me&&t.includes(me))return true;
+  const bn=bungieEl.value.trim().toLowerCase();if(bn&&t.includes(bn))return true;const name=bn.split('#')[0];return!!(name&&name.length>=3&&t.includes(name));}
+const isBot=n=>/bot|checkpoint|luck|d2cp/i.test(n);
+const baseOnMsg=(chan,nick,text)=>{logLine(chan,nick,text);
+  if(isBot(nick)&&matchesMe(nick,text)){
+    if(/left the queue|not currently in queue|removed from the queue/i.test(text)){if(posState[chan]){delete posState[chan];paintDock();}}
+    else parsePos(chan,text);}};
+irc.onmsg=baseOnMsg;
+/* feed buffer + tabs: All = combined view with channel tags, or one tab per bot */
+const feed=[];let feedTab=ls.get('feedTab','all');
+function feedVisible(m){if(m.cls==='sys')return true;
+  if(feedTab!=='all'&&m.chan!==feedTab)return false;
+  if($('#onlyMine')?.checked&&!matchesMe(m.nick,m.text))return false;
+  return true;}
+function feedNode(m){const div=document.createElement('div');div.className='ln';
+  const mine=m.nick&&m.nick.toLowerCase()===irc.user,tag=m.chan&&feedTab==='all'?`<span class="tag">${esc(m.chan)}</span>`:'';
+  div.innerHTML=m.cls==='sys'?`<span class="sys">${esc(m.text)}</span>`:`${tag}<span class="${mine?'me':isBot(m.nick)?'b':'u'}">${esc(m.nick)}</span>: ${esc(m.text)}`;
+  return div;}
+function logLine(chan,nick,text,cls){const m={chan,nick,text,cls};feed.push(m);while(feed.length>400)feed.shift();
+  if(!feedVisible(m))return;
+  const log=$('#log'),atBottom=log.scrollHeight-log.scrollTop-log.clientHeight<40;
+  log.appendChild(feedNode(m));while(log.children.length>150)log.removeChild(log.firstChild);
+  if(atBottom)log.scrollTop=log.scrollHeight;}
+function paintFeed(){const log=$('#log');log.innerHTML='';feed.filter(feedVisible).slice(-150).forEach(m=>log.appendChild(feedNode(m)));log.scrollTop=log.scrollHeight;}
+function paintFeedTabs(){
+  // dynamic: a bot only earns a tab while you're engaged with it — hand-picked
+  // for queueing or currently in its queue — and disabled bots never show
+  const chans=chanOn().filter(c=>(!state.auto&&state.sel.has(c))||posState[c]);
+  if(feedTab!=='all'&&!chans.includes(feedTab))feedTab='all';
+  $('#feedTabs').innerHTML=[`<button class="ftab ${feedTab==='all'?'on':''}" data-ft="all">All</button>`,
+    ...chans.map(c=>`<button class="ftab ${feedTab===c?'on':''}" data-ft="${c}">${esc(c)}</button>`)].join('');}
+$('#feedTabs').addEventListener('click',e=>{const b=e.target.closest('[data-ft]');if(!b)return;
+  feedTab=b.dataset.ft;ls.set('feedTab',feedTab);paintFeedTabs();paintFeed();});
+function sysLog(t){logLine(null,null,t,'sys');}
+/* maximise / minimise the live feed */
+const ICON_MAX='<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_MIN='<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function setMax(on){const c=$('#liveCard');c.classList.toggle('max',on);
+  const b=$('#maxBtn');b.innerHTML=on?ICON_MIN:ICON_MAX;b.title=on?'Return to normal view':'Full-screen the chat';
+  $('#log').scrollTop=$('#log').scrollHeight;}
+$('#maxBtn').innerHTML=ICON_MAX;
+$('#maxBtn').addEventListener('click',()=>setMax(!$('#liveCard').classList.contains('max')));
+/* Bot reply e.g.: "You are position 6! ⏱️Your estimated wait time is less than 8m0s. 🏁Checkpoint: Crota's End: Crota (Master)" */
+const posState={};   // channel -> {pos, wait, cp, ts, leaving}
+function parsePos(chan,text){
+  const p=(text.match(/position\s*(\d{1,4})/i)||text.match(/(?:pos|place|spot|#)\s*[:#]?\s*(\d{1,4})/i)||[])[1];
+  const w=text.match(/wait time is(?: less than)?\s*([0-9hms ]+?)\s*[.!]/i);
+  const cp=text.match(/checkpoint:\s*(.+?)\s*$/i);
+  if(p){posState[chan]={pos:+p,wait:w?w[1].trim():null,cp:cp?cp[1].trim():null,ts:nowt()};paintDock();}}
+function paintDock(){paintFeedTabs();const rows=$('#pdRows'),ks=Object.keys(posState);
+  if(!ks.length){rows.innerHTML='<div class="pd-empty">Not in any queue yet. Connect Twitch &amp; queue — your position on each bot shows here.</div>';return;}
+  rows.innerHTML=ks.sort((a,b)=>posState[a].pos-posState[b].pos).map(c=>{const e=posState[c];
+    return `<div class="pd-row ${e.leaving?'leaving':''}" data-leave="${c}" title="${esc(e.cp||'click to leave this queue')}"><span class="pd-pos">#${e.pos}</span><span class="pd-ch"><b>${esc(c)}</b><span class="pd-sub">${e.leaving?'leaving…':(e.wait?'~'+esc(e.wait)+' · ':'')+e.ts}</span><span class="pd-leave">Leave queue</span></span><span class="pd-x">✕</span></div>`;}).join('');}
+$('#pdRows').addEventListener('click',e=>{const b=e.target.closest('[data-leave]');if(!b)return;const c=b.dataset.leave;
+  if(!irc.connected){sysLog('⚠ Connect Twitch first to leave queues from here.');return;}
+  const en=posState[c];if(!en||en.leaving)return;en.leaving=true;paintDock();
+  if(!irc.joined.has(c))irc.join(c);irc.say(c,LEAVE_CMD);sysLog(`→ #${c}: ${LEAVE_CMD}`);
+  setTimeout(()=>{if(posState[c]&&posState[c].leaving){delete posState[c];paintDock();}
+    state.sel.delete(c);ensureActive();saveCh();paintChannels();render();},6000);});
+function nowt(){const d=new Date();return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');}
+
+/* ── connect / disconnect ──────────────────────────── */
+$('#twUser').value=ls.get('twUser','');$('#twToken').value=ls.get('twToken','');
+$('#connectBtn').addEventListener('click',()=>{const u=$('#twUser').value.trim(),t=$('#twToken').value.trim();
+  if(!u||!t){irc.connState='err';renderChip();sysLog('Enter Twitch username + token.');return;}ls.set('twUser',u);ls.set('twToken',t);sysLog('Connecting…');irc.connect(u,t);});
+$('#chipBtn').addEventListener('click',()=>{irc.disconnect();ls.del('twToken');$('#twToken').value='';renderChip();paintChannels();render();sysLog('Disconnected — token forgotten.');});
+
+/* ── auto position ─────────────────────────────────── */
+let posTimer=null;
+function checkPos(){if(!irc.connected)return;
+  const known=Object.keys(posState);
+  const targets=known.length?known:(state.auto?(state.active?[state.active]:[]):selOn());
+  if(!targets.length)return;
+  (async()=>{for(const c of targets){if(!irc.joined.has(c))irc.join(c);irc.say(c,POS_CMD);await wait(SEND_GAP);}})();
+  sysLog(`→ ${POS_CMD} (${targets.map(c=>'#'+c).join(', ')})`);}
+function startAutoPos(){stopAutoPos();if(!$('#autoPos').checked)return;const ms=+$('#posEvery').value||120000;posTimer=setInterval(()=>{if(irc.connected)checkPos();},ms);if(irc.connected)checkPos();}
+function stopAutoPos(){if(posTimer){clearInterval(posTimer);posTimer=null;}}
+$('#autoPos').addEventListener('change',()=>{ls.set('autoPos',$('#autoPos').checked?'1':'0');startAutoPos();});
+$('#posEvery').addEventListener('change',()=>{ls.set('posEvery',$('#posEvery').value);if($('#autoPos').checked)startAutoPos();});
+$('#posNow').addEventListener('click',checkPos);window.startAutoPos=startAutoPos;window.stopAutoPos=stopAutoPos;
+
+/* ── queue / smart queue ───────────────────────────── */
+$('#queueBtn').addEventListener('click',async()=>{const btn=$('#queueBtn');
+  if(state.auto){sysLog('Auto is on — Smart Queue drives. Turn Auto off (or tap a bot pill) to queue by hand.');flash(btn,'Auto is on ↑');return;}
+  if(guide(btn)||needTwitch(btn))return;const cmd=buildCommand();
+  const targets=selOn();
+  if(!targets.length){sysLog('Tap the bot pills to highlight the queues you want first.');flash(btn,'Tap a bot pill first');return;}
+  btn.disabled=true;btn.textContent='Queueing…';
+  try{
+    targets.forEach(c=>{if(!irc.joined.has(c))irc.join(c);});
+    if(targets.length>1)await wait(400);
+    for(const c of targets){if(irc.say(c,cmd))sysLog(`→ #${c}: ${cmd}`);await wait(SEND_GAP);}
+    btn.textContent='Queued ✓';
+  } finally { setTimeout(()=>{btn.disabled=false;render();},1200); }});
+function flash(b,t){const o=b.textContent;b.textContent=t;setTimeout(()=>{b.textContent=o;render();},1500);}
+$('#smartBtn').addEventListener('click',smartQueue);
+const SEND_GAP=350;   // ms between messages — stays under Twitch's chat rate limit
+
+/* parse "8m0s" / "1h 2m" / "45s" into seconds; null when a bot gave no wait */
+function waitSec(e){if(!e||!e.wait)return null;
+  const h=e.wait.match(/(\d+)\s*h/i),m=e.wait.match(/(\d+)\s*m/i),s=e.wait.match(/(\d+)\s*s/i);
+  return (h||m||s)?(h?3600*+h[1]:0)+(m?60*+m[1]:0)+(s?+s[1]:0):null;}
+
+/* send !leave to each channel, retrying until the bot confirms; returns the unconfirmed ones */
+async function leaveQueues(losers){
+  const left=new Set(),prev=irc.onmsg;
+  irc.onmsg=(c,n,t)=>{prev(c,n,t);if(isBot(n)&&matchesMe(n,t)&&/left the queue|not currently in queue|removed from the queue/i.test(t))left.add(c.toLowerCase());};
+  try{
+    for(let a=0;a<3 && losers.some(c=>!left.has(c.toLowerCase()));a++){
+      for(const c of losers){if(!left.has(c.toLowerCase())){irc.join(c);irc.say(c,LEAVE_CMD);await wait(SEND_GAP);}}
+      await wait(1600);
+    }
+  } finally { irc.onmsg=prev; }
+  return losers.filter(c=>!left.has(c.toLowerCase()));
+}
+
+/* Smart Queue: queue on every enabled bot, read each reply, keep the quickest
+   line (least wait time, then lowest position) and leave all the rest. */
+async function smartQueue(){
+  const btn=$('#smartBtn');
+  if(!state.auto){sysLog('Auto is off — Smart Queue drives all bots. Turn Auto back on, or Queue your highlighted bots.');flash(btn,'Turn Auto on ↑');return;}
+  if(guide(btn)||needTwitch(btn))return;
+  const cmd=buildCommand();
+  const chans=selOn();if(!chans.length){sysLog('No bots confirmed active yet (green dot) — give it a few seconds after connecting.');flash(btn,'No bots confirmed ↑');return;}
+  const orig=btn.textContent;btn.disabled=true;btn.textContent='Queueing…';
+  try{
+    sysLog(`🏁 Smart Queue across ${chans.length} bot${chans.length>1?'s':''}…`);
+    chans.forEach(c=>{delete posState[c];});paintDock();
+    chans.forEach(c=>irc.join(c));
+    await wait(450);
+    for(const c of chans){irc.say(c,cmd);await wait(SEND_GAP);}     // spaced sends
+    btn.textContent='Reading queues…';
+    for(let i=0;i<32 && chans.some(c=>!posState[c]);i++) await wait(250);
+    const got=chans.filter(c=>posState[c]);
+    if(!got.length){sysLog('Queued on all — no replies yet; watch the feed, positions will appear in the dock where you can leave the ones you don\'t want.');return;}
+    const rank=c=>{const e=posState[c],w=waitSec(e);return[w==null?1:0,w==null?e.pos:w,e.pos];};
+    const best=[...got].sort((a,b)=>{const ra=rank(a),rb=rank(b);return ra[0]-rb[0]||ra[1]-rb[1]||ra[2]-rb[2];})[0];
+    const e=posState[best];
+    state.active=best;saveCh();paintChannels();render();
+    const losers=chans.filter(c=>c!==best);
+    sysLog(`✅ Quickest: ${best} (#${e.pos}${e.wait?', ~'+e.wait:''}). Leaving ${losers.length} other queue${losers.length===1?'':'s'}…`);
+    btn.textContent='Leaving the rest…';
+    const stuck=await leaveQueues(losers);
+    sysLog(stuck.length?`⚠ Couldn't confirm leaving: ${stuck.join(', ')} — type ${LEAVE_CMD} there if you get an invite.`:`Done — kept ${best} only.`);
+  } finally { btn.disabled=false; btn.textContent=orig; render(); }
+}
+
+
+/* ── init ──────────────────────────────────────────── */
+$('#onlyMine').checked=ls.get('onlyMine','1')==='1';$('#onlyMine').addEventListener('change',()=>{ls.set('onlyMine',$('#onlyMine').checked?'1':'0');paintFeed();});
+sysLog("Connect Twitch to see the bots' replies to you here.");
+$('#posEvery').value=ls.get('posEvery','120000');$('#autoPos').checked=ls.get('autoPos','0')==='1';
+ensureActive();validateBungie();renderChip();refreshYou();paintChannels();paintActivities();paintDiff();paintEncounters();paintDock();render();
+
+/* ── first-run onboarding ──────────────────────────── */
+const onboard=$('#onboard');
+const showOnboard=()=>onboard.classList.remove('hide');
+const hideOnboard=()=>{onboard.classList.add('hide');ls.set('onboarded','1');};
+$('#helpBtn').addEventListener('click',showOnboard);
+$('#obClose').addEventListener('click',hideOnboard);
+$('#obNever').addEventListener('click',hideOnboard);
+$('#obGo').addEventListener('click',()=>{hideOnboard();$('#bungie').focus();});
+onboard.addEventListener('click',e=>{if(e.target===onboard)hideOnboard();});
+document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;
+  if(!onboard.classList.contains('hide'))hideOnboard();
+  else if($('#liveCard').classList.contains('max'))setMax(false);});
+if(ls.get('onboarded')!=='1')showOnboard();
+if($('#twUser').value&&$('#twToken').value)irc.connect($('#twUser').value,$('#twToken').value);
+if($('#autoPos').checked)startAutoPos();
+</script>
+</body>
+</html>
